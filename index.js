@@ -16,7 +16,6 @@ const tokens = [
 ];
 
 let tokenIndex = 0;
-let skippedDates = [];
 
 // Function to check and delete file if it exists
 function checkAndDeleteFile(filePath) {
@@ -29,7 +28,7 @@ function checkAndDeleteFile(filePath) {
 // File paths
 const jsonFilePath = path.join(__dirname, `${fileName}.json`);
 const csvFilePath = path.join(__dirname, `${fileName}.csv`);
-const skippedDatesFilePath = path.join(__dirname, 'skipped_dates.json');
+const skippedDatesFilePath = path.join(__dirname, 'skipped_dates.txt');
 
 // Check and delete files
 checkAndDeleteFile(jsonFilePath);
@@ -87,7 +86,7 @@ async function fetchResultsBatch(searchQuery, currentDate, cursor = null, result
 }
 
 async function resultsInDateRange(completeSearchQuery, currentStartDate, nextEndDate) {
-  console.log("Checking if date range should be split: " + currentStartDate + ".." + nextEndDate);
+  console.log("Checking if date range should split: " + currentStartDate + ".." + nextEndDate);
   try {
     const client = new GraphQLClient("https://api.github.com/graphql", {
       headers: {
@@ -128,7 +127,7 @@ async function fetchAllResults() {
       const dayInMilliseconds = 24 * 60 * 60 * 1000;
       let dayCount = Math.ceil((endDateObj - startDateObj) / dayInMilliseconds);
       //    console.log(dayCount);
-      let resultsCount = 0;
+      let results = [];
 
       //keep dividing the search query into smaller batches based on the date range
       let currentStartDateObj = startDateObj;
@@ -143,12 +142,15 @@ async function fetchAllResults() {
         // Check if nextEndDate is not progressing
         if (currentStartDate === nextEndDate && nextResultCount > MAXRESULTS) {
             console.log(`Warning: result count exceeds ${MAXRESULTS}. Recording this date.`);
-            skippedDates.push(currentStartDate);
+            try {
+              await fsPromises.appendFile(`skipped_dates.txt`, currentStartDate + ",", null, 2);
+            } catch (err) {
+              console.error(`Error writing to skipped_dates.txt:`, err);
+            }
 
             let result = await fetchResultsBatch(nextSearchQuery, currentStartDate + ".." + nextEndDate);
-            await writeFiles(result);
-            resultsCount += result.length;
-            // results.push(...result);
+            await writeFiles(result, writeJSON=false, writeCSV=true);
+            results.push(...result);
   
             currentStartDateObj = new Date(nextEndDateObj.getTime() + dayInMilliseconds);
             currentStartDate = currentStartDateObj.toISOString().split("T")[0];
@@ -165,9 +167,8 @@ async function fetchAllResults() {
 
           if (nextResultCount > 0) {
             let result = await fetchResultsBatch(nextSearchQuery, currentStartDate + ".." + nextEndDate);
-            await writeFiles(result);
-            resultsCount += result.length;
-            // results.push(...result);
+            await writeFiles(result, writeJSON=false, writeCSV=true);
+            results.push(...result);
           }
 
           currentStartDateObj = new Date(nextEndDateObj.getTime() + dayInMilliseconds);
@@ -188,8 +189,7 @@ async function fetchAllResults() {
         }
       }
       
-      console.log(`Saved ${resultsCount} results in total`);
-      // return results;
+      return results;
     }
   } catch (error) {
     console.error(error);
@@ -197,7 +197,7 @@ async function fetchAllResults() {
 }
 
 // Write formatted data in JSON and CSV files
-async function writeFiles(json) {
+async function writeFiles(json, writeJSON, writeCSV) {
   if (!json || json.length === 0) {
     console.log('No data to write.');
     return;
@@ -260,21 +260,24 @@ async function writeFiles(json) {
     return data;
   });
 
-
-  // Save as JSON
-  try {
-    await fsPromises.appendFile(`${fileName}.json`, JSON.stringify(formattedResults, null, 2));
-    console.log(`${fileName}.json file updated`);
-  } catch (err) {
-    console.error(`Error writing to ${fileName}.json:`, err);
+  if(writeJSON){
+    // Save as JSON
+    try {
+      await fsPromises.appendFile(`${fileName}.json`, JSON.stringify(formattedResults, null, 2));
+      console.log(`${fileName}.json file updated`);
+    } catch (err) {
+      console.error(`Error writing to ${fileName}.json:`, err);
+    }
   }
 
-  // Save as CSV
-  const csvWriter = csv({
-    path: `${fileName}.csv`,
-    header: Object.keys(formattedResults[0]).map((key) => ({ id: key, title: key })),
-    append: true,
-  });
+  if(writeCSV){
+    // Save as CSV
+    const csvWriter = csv({
+      path: `${fileName}.csv`,
+      header: Object.keys(formattedResults[0]).map((key) => ({ id: key, title: key })),
+      append: true,
+    });
+  }
 
   try {
     await csvWriter.writeRecords(formattedResults);
@@ -397,13 +400,10 @@ console.log("Search Query:", completeSearchQuery);
 
 // Run and write the extraction
 fetchAllResults()
-  .then(() => {
-    // writeFiles(data);
-    // console.log(`Fetched ${data.length} results.`);
-    // Write the skipped dates to a JSON file
-    fs.writeFile('skipped_dates.json', JSON.stringify(skippedDates, null, 2), function (err) {
-        if (err) throw err;
-        console.log('Skipped dates saved to skipped_dates.json');
-    });
+  .then((data) => {
+    writeFiles(data, writeJSON=true, writeCSV=false);
+    console.log("==============================================================");
+    console.log(`Saved ${data.length} results in total`);
+    console.log("==============================================================");
   })
   .catch((error) => console.error(error));
