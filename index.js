@@ -99,7 +99,8 @@ async function fetchAllResults() {
 
     if (repositoryCount <= MAXRESULTS) {
       return fetchResultsBatch(completeSearchQuery);
-    } else {
+    } 
+    else {
       let startDateObj = new Date(startDate);
       let endDateObj = new Date(endDate);
 
@@ -107,6 +108,7 @@ async function fetchAllResults() {
       let dayCount = Math.ceil((endDateObj - startDateObj) / dayInMilliseconds);
       //    console.log(dayCount);
       let results = [];
+      let skippedDates = [];
 
       //keep dividing the search query into smaller batches based on the date range
       let currentStartDateObj = startDateObj;
@@ -114,41 +116,52 @@ async function fetchAllResults() {
       let nextEndDateObj = new Date(currentStartDateObj.getTime() + dayInMilliseconds * dayCount / 2);
       let nextEndDate = nextEndDateObj.toISOString().split("T")[0];
 
+      let prevNextEndDate = ""; // Initialize a variable to store the previous value of nextEndDate
+
       while (nextEndDate <= endDate) {
-        let nextSearchQuery = `${searchQuery} ${dateType}:${currentStartDate}..${nextEndDate}`;
-        let nextResultCount = await resultsInDateRange(nextSearchQuery);
-        if (nextResultCount === null) {
-          console.log("Error: No results found.");
-          return null;
-        }
-        if (nextResultCount <= MAXRESULTS) {
+          let nextSearchQuery = `${searchQuery} ${dateType}:${currentStartDate}..${nextEndDate}`;
+          let nextResultCount = await resultsInDateRange(nextSearchQuery);
 
-          if (nextResultCount > 0) {
-            let result = await fetchResultsBatch(nextSearchQuery, currentStartDate + ".." + nextEndDate);
-            results.push(...result);
+          // Check if nextEndDate is not progressing
+          if (nextEndDate === prevNextEndDate) {
+              console.log("Warning: nextEndDate is not progressing. Breaking out of the loop.");
+              skippedDates.push({startDate: currentStartDate, endDate: nextEndDate});
+              break; // Break out of the while loop
           }
+          prevNextEndDate = nextEndDate; // Update prevNextEndDate with the current nextEndDate
 
-          console.log(`\nExtracted ${results.length} results for ${currentStartDate}..${nextEndDate}...`);
+          if (nextResultCount === null) {
+              console.log("Error: No results found.");
+              return null;
+          }
+          if (nextResultCount <= MAXRESULTS) {
+            if (nextResultCount > 0) {
+              let result = await fetchResultsBatch(nextSearchQuery, currentStartDate + ".." + nextEndDate);
+              results.push(...result);
+            }
 
-          currentStartDateObj = new Date(nextEndDateObj.getTime() + dayInMilliseconds);
-          currentStartDate = currentStartDateObj.toISOString().split("T")[0];
-          if (currentStartDate > endDate) break;
-          nextEndDateObj = endDateObj;
-          nextEndDate = nextEndDateObj.toISOString().split("T")[0];
-        }
-        else {
-          dayCount = Math.ceil((nextEndDateObj - currentStartDateObj) / dayInMilliseconds);
-          //console.log(`\nSplitting ${currentStartDate}..${nextEndDate} into ${dayCount} days...`);
-          if (dayCount == 1)
-            nextEndDateObj = new Date(currentStartDateObj.getTime());
-          else
-            nextEndDateObj = new Date(currentStartDateObj.getTime() + dayInMilliseconds * dayCount / 2);
+            console.log(`\nExtracted ${results.length} results for ${currentStartDate}..${nextEndDate}...`);
 
-          nextEndDate = nextEndDateObj.toISOString().split("T")[0];
-        }
+            currentStartDateObj = new Date(nextEndDateObj.getTime() + dayInMilliseconds);
+            currentStartDate = currentStartDateObj.toISOString().split("T")[0];
+            if (currentStartDate > endDate) break;
+            nextEndDateObj = endDateObj;
+            nextEndDate = nextEndDateObj.toISOString().split("T")[0];
+          }
+          else {
+            dayCount = Math.ceil((nextEndDateObj - currentStartDateObj) / dayInMilliseconds);
+            //console.log(`\nSplitting ${currentStartDate}..${nextEndDate} into ${dayCount} days...`);
+            if (dayCount == 1)
+              nextEndDateObj = new Date(currentStartDateObj.getTime());
+            else
+              nextEndDateObj = new Date(currentStartDateObj.getTime() + dayInMilliseconds * dayCount / 2);
+
+            nextEndDate = nextEndDateObj.toISOString().split("T")[0];
+            prevNextEndDate = nextEndDate;
+          }
       }
 
-      return results;
+      return [results, skippedDates];
     }
   } catch (error) {
     console.error(error);
@@ -157,6 +170,11 @@ async function fetchAllResults() {
 
 // Write formatted data in JSON and CSV files
 function writeFiles(json) {
+  if (!json || json.length === 0) {
+    console.log('No data to write.');
+    return;
+  }
+
   const formattedResults = json.map((result) => {
     // Modify according to the desired format and extraction fields
     const data = {
@@ -345,9 +363,13 @@ console.log("Search Query:", completeSearchQuery);
 
 // Run and write the extraction
 fetchAllResults()
-  .then((data) => {
+  .then(([data, skippedDates]) => {
     writeFiles(data);
-    //writeJsonFile(data);
     console.log(`Fetched ${data.length} results.`);
+    // Write the skipped dates to a JSON file
+    fs.writeFile('skipped_dates.json', JSON.stringify(skippedDates, null, 2), function (err) {
+        if (err) throw err;
+        console.log('Skipped dates saved to skipped_dates.json');
+    });
   })
   .catch((error) => console.error(error));
