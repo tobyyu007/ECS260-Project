@@ -1,19 +1,39 @@
 const { GraphQLClient } = require("graphql-request");
 const fs = require("fs");
+const path = require('path');
 const argv = require("minimist")(process.argv.slice(2));
 const fileName = argv.filename || "results";
 const csv = require("csv-writer").createObjectCsvWriter;
 
 const MAXRESULTS = 1000; // This is the maximum number of results GitHub can provide from a query. If the query returns more than this number, the date range will be split into smaller batches.
-const REQUEST_TIMEOUT = 0; // Set the request timeout in milliseconds
+const REQUEST_TIMEOUT = 100; // Set the request timeout in milliseconds
 
 // Add as many tokens as needed, considering the amount of data
 
 const tokens = [
-  "YOUR TOKEN",
+  "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",
 ];
 
 let tokenIndex = 0;
+let skippedDates = [];
+
+// Function to check and delete file if it exists
+function checkAndDeleteFile(filePath) {
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+    console.log(`Deleted existing file: ${filePath}`);
+  }
+}
+
+// File paths
+const jsonFilePath = path.join(__dirname, `${fileName}.json`);
+const csvFilePath = path.join(__dirname, `${fileName}.csv`);
+const skippedDatesFilePath = path.join(__dirname, 'skipped_dates.json');
+
+// Check and delete files
+checkAndDeleteFile(jsonFilePath);
+checkAndDeleteFile(csvFilePath);
+checkAndDeleteFile(skippedDatesFilePath);
 
 // Rotate through the available tokens and prevent rate limits or other restrictions that may be imposed on a single token.
 function getNextToken() {
@@ -42,16 +62,16 @@ async function fetchResultsBatch(searchQuery, currentDate, cursor = null, result
     const { nodes, pageInfo } = data.search;
     results.push(...nodes);
     if (currentDate !== undefined) {
-      console.log(`\nExtracted ${results.length} results for ${currentDate}...\n\n`);
+      console.log(`Extracted ${results.length} results for ${currentDate}...`);
     } else {
-      console.log(`\nExtracted ${results.length} results so far...`);
+      console.log(`Extracted ${results.length} results so far...`);
     }
 
     const rateLimitData = await client.request(rateLimitQuery);
     const rateLimit = rateLimitData.rateLimit;
-    console.log("Rate Limit:", rateLimit);
-    console.log("hasNextPage:", pageInfo.hasNextPage);
-    console.log("endCursor:", pageInfo.endCursor);
+    // console.log("Rate Limit:", rateLimit);
+    // console.log("hasNextPage:", pageInfo.hasNextPage);
+    // console.log("endCursor:", pageInfo.endCursor);
 
     if (pageInfo.hasNextPage) {
       // Delay between batches to avoid rate limits
@@ -66,7 +86,7 @@ async function fetchResultsBatch(searchQuery, currentDate, cursor = null, result
 }
 
 async function resultsInDateRange(completeSearchQuery) {
-  console.log("Checking if date range should be split: " + completeSearchQuery);
+  console.log("\nChecking if date range should be split: " + completeSearchQuery);
   try {
     const client = new GraphQLClient("https://api.github.com/graphql", {
       headers: {
@@ -99,8 +119,7 @@ async function fetchAllResults() {
 
     if (repositoryCount <= MAXRESULTS) {
       return fetchResultsBatch(completeSearchQuery);
-    } 
-    else {
+    } else {
       let startDateObj = new Date(startDate);
       let endDateObj = new Date(endDate);
 
@@ -108,7 +127,6 @@ async function fetchAllResults() {
       let dayCount = Math.ceil((endDateObj - startDateObj) / dayInMilliseconds);
       //    console.log(dayCount);
       let results = [];
-      let skippedDates = [];
 
       //keep dividing the search query into smaller batches based on the date range
       let currentStartDateObj = startDateObj;
@@ -116,52 +134,56 @@ async function fetchAllResults() {
       let nextEndDateObj = new Date(currentStartDateObj.getTime() + dayInMilliseconds * dayCount / 2);
       let nextEndDate = nextEndDateObj.toISOString().split("T")[0];
 
-      let prevNextEndDate = ""; // Initialize a variable to store the previous value of nextEndDate
-
       while (nextEndDate <= endDate) {
-          let nextSearchQuery = `${searchQuery} ${dateType}:${currentStartDate}..${nextEndDate}`;
-          let nextResultCount = await resultsInDateRange(nextSearchQuery);
+        let nextSearchQuery = `${searchQuery} ${dateType}:${currentStartDate}..${nextEndDate}`;
+        let nextResultCount = await resultsInDateRange(nextSearchQuery);
 
-          // Check if nextEndDate is not progressing
-          if (nextEndDate === prevNextEndDate) {
-              console.log("Warning: nextEndDate is not progressing. Breaking out of the loop.");
-              skippedDates.push({startDate: currentStartDate, endDate: nextEndDate});
-              break; // Break out of the while loop
-          }
-          prevNextEndDate = nextEndDate; // Update prevNextEndDate with the current nextEndDate
-
-          if (nextResultCount === null) {
-              console.log("Error: No results found.");
-              return null;
-          }
-          if (nextResultCount <= MAXRESULTS) {
-            if (nextResultCount > 0) {
-              let result = await fetchResultsBatch(nextSearchQuery, currentStartDate + ".." + nextEndDate);
-              results.push(...result);
-            }
-
-            console.log(`\nExtracted ${results.length} results for ${currentStartDate}..${nextEndDate}...`);
-
+        // Check if nextEndDate is not progressing
+        if (currentStartDate === nextEndDate && nextResultCount > MAXRESULTS) {
+            console.log("Warning: max result count exceeds for one day range. Recording this date.");
+            skippedDates.push(currentStartDate);
+  
             currentStartDateObj = new Date(nextEndDateObj.getTime() + dayInMilliseconds);
             currentStartDate = currentStartDateObj.toISOString().split("T")[0];
             if (currentStartDate > endDate) break;
             nextEndDateObj = endDateObj;
             nextEndDate = nextEndDateObj.toISOString().split("T")[0];
-          }
-          else {
-            dayCount = Math.ceil((nextEndDateObj - currentStartDateObj) / dayInMilliseconds);
-            //console.log(`\nSplitting ${currentStartDate}..${nextEndDate} into ${dayCount} days...`);
-            if (dayCount == 1)
-              nextEndDateObj = new Date(currentStartDateObj.getTime());
-            else
-              nextEndDateObj = new Date(currentStartDateObj.getTime() + dayInMilliseconds * dayCount / 2);
+        }
 
-            nextEndDate = nextEndDateObj.toISOString().split("T")[0];
-            prevNextEndDate = nextEndDate;
+        if (nextResultCount === null) {
+          console.log("Error: No results found.");
+          return null;
+        }
+        if (nextResultCount <= MAXRESULTS) {
+
+          if (nextResultCount > 0) {
+            let result = await fetchResultsBatch(nextSearchQuery, currentStartDate + ".." + nextEndDate);
+            await writeFiles(result);
+            results.push(...result);
           }
+
+          console.log(`Extracted ${results.length} results for ${currentStartDate}..${nextEndDate}...`);
+
+          currentStartDateObj = new Date(nextEndDateObj.getTime() + dayInMilliseconds);
+          currentStartDate = currentStartDateObj.toISOString().split("T")[0];
+          if (currentStartDate > endDate) break;
+          nextEndDateObj = endDateObj;
+          nextEndDate = nextEndDateObj.toISOString().split("T")[0];
+        }
+        else {
+          dayCount = Math.ceil((nextEndDateObj - currentStartDateObj) / dayInMilliseconds);
+          //console.log(`\nSplitting ${currentStartDate}..${nextEndDate} into ${dayCount} days...`);
+          if (dayCount == 1)
+            nextEndDateObj = new Date(currentStartDateObj.getTime());
+          else
+            nextEndDateObj = new Date(currentStartDateObj.getTime() + dayInMilliseconds * dayCount / 2);
+          
+          nextEndDate = nextEndDateObj.toISOString().split("T")[0];
+        }
       }
-
-      return [results, skippedDates];
+      
+      // writeFiles(results);
+      // return results;
     }
   } catch (error) {
     console.error(error);
@@ -169,7 +191,7 @@ async function fetchAllResults() {
 }
 
 // Write formatted data in JSON and CSV files
-function writeFiles(json) {
+async function writeFiles(json) {
   if (!json || json.length === 0) {
     console.log('No data to write.');
     return;
@@ -234,20 +256,21 @@ function writeFiles(json) {
 
 
   // Save as JSON
-  fs.writeFile(`${fileName}.json`, JSON.stringify(formattedResults, null, 2), function (err) {
+  fs.appendFile(`${fileName}.json`, JSON.stringify(formattedResults, null, 2), function (err) {
     if (err) throw err;
-    console.log(`${fileName}.json file saved`);
+    console.log(`${fileName}.json file updated`);
   });
 
   // Save as CSV
   const csvWriter = csv({
     path: `${fileName}.csv`,
     header: Object.keys(formattedResults[0]).map((key) => ({ id: key, title: key })),
+    append: true,
   });
 
   csvWriter
     .writeRecords(formattedResults)
-    .then(() => console.log(`${fileName}.csv file saved`))
+    .then(() => console.log(`${fileName}.csv file updated\n`))
     .catch((err) => console.error(err));
 }
 
@@ -363,9 +386,9 @@ console.log("Search Query:", completeSearchQuery);
 
 // Run and write the extraction
 fetchAllResults()
-  .then(([data, skippedDates]) => {
-    writeFiles(data);
-    console.log(`Fetched ${data.length} results.`);
+  .then(() => {
+    // writeFiles(data);
+    // console.log(`Fetched ${data.length} results.`);
     // Write the skipped dates to a JSON file
     fs.writeFile('skipped_dates.json', JSON.stringify(skippedDates, null, 2), function (err) {
         if (err) throw err;
