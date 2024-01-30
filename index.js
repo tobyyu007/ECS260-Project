@@ -12,7 +12,7 @@ const REQUEST_TIMEOUT = 100; // Set the request timeout in milliseconds
 // Add as many tokens as needed, considering the amount of data
 
 const tokens = [
-  "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",
+  "<YOUR TOKEN>",
 ];
 
 let tokenIndex = 0;
