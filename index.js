@@ -12,7 +12,7 @@ const REQUEST_TIMEOUT = 100; // Set the request timeout in milliseconds
 // Add as many tokens as needed, considering the amount of data
 
 const tokens = [
-  "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",
+  "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",
 ];
 
 let tokenIndex = 0;
@@ -269,10 +269,10 @@ async function writeFiles(json, writeJSON, writeCSV) {
       console.error(`Error writing to ${fileName}.json:`, err);
     }
   }
-
+  var csvWriter;
   if(writeCSV){
     // Save as CSV
-    const csvWriter = csv({
+    csvWriter = csv({
       path: `${fileName}.csv`,
       header: Object.keys(formattedResults[0]).map((key) => ({ id: key, title: key })),
       append: true,
