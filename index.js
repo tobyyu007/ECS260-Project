@@ -12,7 +12,7 @@ const REQUEST_TIMEOUT = 100; // Set the request timeout in milliseconds
 // Add as many tokens as needed, considering the amount of data
 
 const tokens = [
-  "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",
+  "<YOUR TOKEN>",
 ];
 
 let tokenIndex = 0;
@@ -28,12 +28,12 @@ function checkAndDeleteFile(filePath) {
 // File paths
 const jsonFilePath = path.join(__dirname, `${fileName}.json`);
 const csvFilePath = path.join(__dirname, `${fileName}.csv`);
-const skippedDatesFilePath = path.join(__dirname, 'skipped_dates.txt');
+const incompleteDatesFilePath = path.join(__dirname, 'incomplete_dates.txt');
 
 // Check and delete files
 checkAndDeleteFile(jsonFilePath);
 checkAndDeleteFile(csvFilePath);
-checkAndDeleteFile(skippedDatesFilePath);
+checkAndDeleteFile(incompleteDatesFilePath);
 
 // Rotate through the available tokens and prevent rate limits or other restrictions that may be imposed on a single token.
 function getNextToken() {
@@ -62,9 +62,9 @@ async function fetchResultsBatch(searchQuery, currentDate, cursor = null, result
     const { nodes, pageInfo } = data.search;
     results.push(...nodes);
     if (currentDate !== undefined) {
-      console.log(`Extracted ${results.length} results for ${currentDate}...`);
+      console.log(`Extracted ${results.length} results for ${currentDate}..`);
     } else {
-      console.log(`Extracted ${results.length} results so far...`);
+      console.log(`Extracted ${results.length} results so far..`);
     }
 
     const rateLimitData = await client.request(rateLimitQuery);
@@ -95,7 +95,7 @@ async function resultsInDateRange(completeSearchQuery, currentStartDate, nextEnd
     });
     let data = await client.request(countQuery, { completeSearchQuery });
     const { repositoryCount } = data.search;
-    console.log(`Results count in this time range: ${repositoryCount}`);
+    console.log(`Total results in this time range: ${repositoryCount}`);
     return repositoryCount;
   } catch (error) {
     console.error(error);
@@ -143,9 +143,9 @@ async function fetchAllResults() {
         if (currentStartDate === nextEndDate && nextResultCount > MAXRESULTS) {
             console.log(`Warning: result count exceeds ${MAXRESULTS}. Recording this date.`);
             try {
-              await fsPromises.appendFile(`skipped_dates.txt`, currentStartDate + ",", null, 2);
+              await fsPromises.appendFile(`incomplete_dates.txt`, currentStartDate + ",", null, 2);
             } catch (err) {
-              console.error(`Error writing to skipped_dates.txt:`, err);
+              console.error(`Error writing to incomplete_dates.txt:`, err);
             }
 
             let result = await fetchResultsBatch(nextSearchQuery, currentStartDate + ".." + nextEndDate);
@@ -277,13 +277,13 @@ async function writeFiles(json, writeJSON, writeCSV) {
       header: Object.keys(formattedResults[0]).map((key) => ({ id: key, title: key })),
       append: true,
     });
-  }
 
-  try {
-    await csvWriter.writeRecords(formattedResults);
-    console.log(`${fileName}.csv file updated\n`);
-  } catch (err) {
-    console.error(`Error writing to ${fileName}.csv:`, err);
+    try {
+      await csvWriter.writeRecords(formattedResults);
+      console.log(`${fileName}.csv file updated\n`);
+    } catch (err) {
+      console.error(`Error writing to ${fileName}.csv:`, err);
+    }
   }
 }
 
