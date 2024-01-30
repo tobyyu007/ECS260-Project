@@ -1,5 +1,6 @@
 const { GraphQLClient } = require("graphql-request");
 const fs = require("fs");
+const fsPromises = require('fs').promises;
 const path = require('path');
 const argv = require("minimist")(process.argv.slice(2));
 const fileName = argv.filename || "results";
@@ -85,8 +86,8 @@ async function fetchResultsBatch(searchQuery, currentDate, cursor = null, result
   }
 }
 
-async function resultsInDateRange(completeSearchQuery) {
-  console.log("\nChecking if date range should be split: " + completeSearchQuery);
+async function resultsInDateRange(completeSearchQuery, currentStartDate, nextEndDate) {
+  console.log("Checking if date range should be split: " + currentStartDate + ".." + nextEndDate);
   try {
     const client = new GraphQLClient("https://api.github.com/graphql", {
       headers: {
@@ -95,7 +96,7 @@ async function resultsInDateRange(completeSearchQuery) {
     });
     let data = await client.request(countQuery, { completeSearchQuery });
     const { repositoryCount } = data.search;
-    console.log(`Results: ${repositoryCount}`);
+    console.log(`Results count in this time range: ${repositoryCount}`);
     return repositoryCount;
   } catch (error) {
     console.error(error);
@@ -115,7 +116,8 @@ async function fetchAllResults() {
 
     const data = await client.request(countQuery, { completeSearchQuery });
     const { repositoryCount } = data.search;
-    console.log(`Total results: ${repositoryCount}`);
+    console.log(`Total results for this query: ${repositoryCount}`);
+    console.log("==============================================================")
 
     if (repositoryCount <= MAXRESULTS) {
       return fetchResultsBatch(completeSearchQuery);
@@ -126,7 +128,7 @@ async function fetchAllResults() {
       const dayInMilliseconds = 24 * 60 * 60 * 1000;
       let dayCount = Math.ceil((endDateObj - startDateObj) / dayInMilliseconds);
       //    console.log(dayCount);
-      let results = [];
+      let resultsCount = 0;
 
       //keep dividing the search query into smaller batches based on the date range
       let currentStartDateObj = startDateObj;
@@ -136,12 +138,17 @@ async function fetchAllResults() {
 
       while (nextEndDate <= endDate) {
         let nextSearchQuery = `${searchQuery} ${dateType}:${currentStartDate}..${nextEndDate}`;
-        let nextResultCount = await resultsInDateRange(nextSearchQuery);
+        let nextResultCount = await resultsInDateRange(nextSearchQuery, currentStartDate, nextEndDate);
 
         // Check if nextEndDate is not progressing
         if (currentStartDate === nextEndDate && nextResultCount > MAXRESULTS) {
-            console.log("Warning: max result count exceeds for one day range. Recording this date.");
+            console.log(`Warning: result count exceeds ${MAXRESULTS}. Recording this date.`);
             skippedDates.push(currentStartDate);
+
+            let result = await fetchResultsBatch(nextSearchQuery, currentStartDate + ".." + nextEndDate);
+            await writeFiles(result);
+            resultsCount += result.length;
+            // results.push(...result);
   
             currentStartDateObj = new Date(nextEndDateObj.getTime() + dayInMilliseconds);
             currentStartDate = currentStartDateObj.toISOString().split("T")[0];
@@ -159,10 +166,9 @@ async function fetchAllResults() {
           if (nextResultCount > 0) {
             let result = await fetchResultsBatch(nextSearchQuery, currentStartDate + ".." + nextEndDate);
             await writeFiles(result);
-            results.push(...result);
+            resultsCount += result.length;
+            // results.push(...result);
           }
-
-          console.log(`Extracted ${results.length} results for ${currentStartDate}..${nextEndDate}...`);
 
           currentStartDateObj = new Date(nextEndDateObj.getTime() + dayInMilliseconds);
           currentStartDate = currentStartDateObj.toISOString().split("T")[0];
@@ -182,7 +188,7 @@ async function fetchAllResults() {
         }
       }
       
-      // writeFiles(results);
+      console.log(`Saved ${resultsCount} results in total`);
       // return results;
     }
   } catch (error) {
@@ -256,10 +262,12 @@ async function writeFiles(json) {
 
 
   // Save as JSON
-  fs.appendFile(`${fileName}.json`, JSON.stringify(formattedResults, null, 2), function (err) {
-    if (err) throw err;
+  try {
+    await fsPromises.appendFile(`${fileName}.json`, JSON.stringify(formattedResults, null, 2));
     console.log(`${fileName}.json file updated`);
-  });
+  } catch (err) {
+    console.error(`Error writing to ${fileName}.json:`, err);
+  }
 
   // Save as CSV
   const csvWriter = csv({
@@ -268,10 +276,12 @@ async function writeFiles(json) {
     append: true,
   });
 
-  csvWriter
-    .writeRecords(formattedResults)
-    .then(() => console.log(`${fileName}.csv file updated\n`))
-    .catch((err) => console.error(err));
+  try {
+    await csvWriter.writeRecords(formattedResults);
+    console.log(`${fileName}.csv file updated\n`);
+  } catch (err) {
+    console.error(`Error writing to ${fileName}.csv:`, err);
+  }
 }
 
 
@@ -382,6 +392,7 @@ const dateType = argv.date || "created";
 
 // Construct the search query with the date range
 const completeSearchQuery = `${searchQuery} ${dateType}:${startDate}..${endDate}`;
+console.log("==============================================================")
 console.log("Search Query:", completeSearchQuery);
 
 // Run and write the extraction
