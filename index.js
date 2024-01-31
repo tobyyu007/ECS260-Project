@@ -44,49 +44,62 @@ function getNextToken() {
 
 const batchSize = argv.batchsize || 10; // Set the desired batch size. Maximum is 100
 
-// Fecth a batch of results based on the provided search query, current date, cursor (pagination), and previous results. 
-async function fetchResultsBatch(searchQuery, currentDate, cursor = null, results = []) {
-  try {
-    const client = new GraphQLClient("https://api.github.com/graphql", {
-      headers: {
-        Authorization: `Bearer ${getNextToken()}`
-      }
-    });
-
-    const data = await client.request(query, {
-      searchQuery,
-      first: batchSize,
-      after: cursor
-    });
-
-    const { nodes, pageInfo } = data.search;
-    results.push(...nodes);
-    if (currentDate !== undefined) {
-      console.log(`Extracted ${results.length} results for ${currentDate}..`);
-    } else {
-      console.log(`Extracted ${results.length} results so far..`);
-    }
-
-    const rateLimitData = await client.request(rateLimitQuery);
-    const rateLimit = rateLimitData.rateLimit;
-    // console.log("Rate Limit:", rateLimit);
-    // console.log("hasNextPage:", pageInfo.hasNextPage);
-    // console.log("endCursor:", pageInfo.endCursor);
-
-    if (pageInfo.hasNextPage) {
-      // Delay between batches to avoid rate limits
-      await new Promise((resolve) => setTimeout(resolve, REQUEST_TIMEOUT)); // Adjust the delay time as needed
-      return await fetchResultsBatch(searchQuery, currentDate, pageInfo.endCursor, results);
-    } else {
-      return results;
-    }
-  } catch (error) {
-    console.error(error);
-  }
-}
-
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Fecth a batch of results based on the provided search query, current date, cursor (pagination), and previous results. 
+// Sleep function as before
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchResultsBatch(searchQuery, currentDate, cursor = null, results = []) {
+  while (true) {  // Infinite loop for retrying
+    try {
+      const client = new GraphQLClient("https://api.github.com/graphql", {
+        headers: {
+          Authorization: `Bearer ${getNextToken()}`
+        }
+      });
+
+      const data = await client.request(query, {
+        searchQuery,
+        first: batchSize,
+        after: cursor
+      });
+
+      const { nodes, pageInfo } = data.search;
+      results.push(...nodes);
+      if (currentDate !== undefined) {
+        console.log(`Extracted ${results.length} results for ${currentDate}..`);
+      } else {
+        console.log(`Extracted ${results.length} results so far..`);
+      }
+
+      const rateLimitData = await client.request(rateLimitQuery);
+      const rateLimit = rateLimitData.rateLimit;
+      // console.log("Rate Limit:", rateLimit);
+      // console.log("hasNextPage:", pageInfo.hasNextPage);
+      // console.log("endCursor:", pageInfo.endCursor);
+
+      if (pageInfo.hasNextPage) {
+        // Delay between batches to avoid rate limits
+        await new Promise((resolve) => setTimeout(resolve, REQUEST_TIMEOUT)); // Adjust the delay time as needed
+        return await fetchResultsBatch(searchQuery, currentDate, pageInfo.endCursor, results);
+      } else {
+        return results; // Return results if no more pages
+      }
+    } catch (error) {
+      console.error(error);
+      console.log("GraphQL Fetching Error Occurred, Retrying in 1 minute...");
+      await sleep(60000); // Wait for 1 minute
+    }
+  }
+
+  // This return statement is now unreachable due to the infinite loop
+  // but included for completeness.
+  return null;
 }
 
 async function resultsInDateRange(completeSearchQuery, currentStartDate, nextEndDate) {
