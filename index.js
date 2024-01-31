@@ -12,7 +12,7 @@ const REQUEST_TIMEOUT = 100; // Set the request timeout in milliseconds
 // Add as many tokens as needed, considering the amount of data
 
 const tokens = [
-  "<YOUR TOKEN>",
+  "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",
 ];
 
 let tokenIndex = 0;
@@ -28,7 +28,7 @@ function checkAndDeleteFile(filePath) {
 // File paths
 const jsonFilePath = path.join(__dirname, `${fileName}.json`);
 const csvFilePath = path.join(__dirname, `${fileName}.csv`);
-const incompleteDatesFilePath = path.join(__dirname, 'incomplete_dates.txt');
+const incompleteDatesFilePath = path.join(__dirname, `${fileName} incomplete_dates.txt`);
 
 // Check and delete files
 checkAndDeleteFile(jsonFilePath);
@@ -85,24 +85,30 @@ async function fetchResultsBatch(searchQuery, currentDate, cursor = null, result
   }
 }
 
-async function resultsInDateRange(completeSearchQuery, currentStartDate, nextEndDate) {
-  console.log("Checking if date range should split: " + currentStartDate + ".." + nextEndDate);
-  try {
-    const client = new GraphQLClient("https://api.github.com/graphql", {
-      headers: {
-        Authorization: `Bearer ${getNextToken()}`
-      }
-    });
-    let data = await client.request(countQuery, { completeSearchQuery });
-    const { repositoryCount } = data.search;
-    console.log(`Total results in this time range: ${repositoryCount}`);
-    return repositoryCount;
-  } catch (error) {
-    console.error(error);
-  }
-  return null;
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function resultsInDateRange(completeSearchQuery, currentStartDate, nextEndDate) {
+  console.log("Checking if date range should split: " + currentStartDate + ".." + nextEndDate);
+  while (true) { // Infinite loop, will break out on success or manual interruption
+    try {
+      const client = new GraphQLClient("https://api.github.com/graphql", {
+        headers: {
+          Authorization: `Bearer ${getNextToken()}`
+        }
+      });
+      let data = await client.request(countQuery, { completeSearchQuery });
+      const { repositoryCount } = data.search;
+      console.log(`Total results in this time range: ${repositoryCount}`);
+      return repositoryCount;
+    } catch (error) {
+      console.error(error);
+      console.log("GraphQL Fetching Error Occurred, Retrying in 1 minute...");
+      await sleep(60000); // Wait for 1 minute (60000 milliseconds)
+    }
+  }
+}
 
 // Determine whether to fetch all results in a single batch or in multiple batches based on total results and dates.
 async function fetchAllResults() {
@@ -143,9 +149,9 @@ async function fetchAllResults() {
         if (currentStartDate === nextEndDate && nextResultCount > MAXRESULTS) {
             console.log(`Warning: result count exceeds ${MAXRESULTS}. Recording this date.`);
             try {
-              await fsPromises.appendFile(`incomplete_dates.txt`, currentStartDate + ",", null, 2);
+              await fsPromises.appendFile(`${fileName} incomplete_dates.txt`, currentStartDate + ",", null, 2);
             } catch (err) {
-              console.error(`Error writing to incomplete_dates.txt:`, err);
+              console.error(`Error writing to ${fileName} incomplete_dates.txt`, err);
             }
 
             let result = await fetchResultsBatch(nextSearchQuery, currentStartDate + ".." + nextEndDate);
@@ -272,13 +278,12 @@ async function writeFiles(json, writeJSON, writeCSV) {
 
   if(writeCSV){
     // Save as CSV
-    const csvWriter = csv({
-      path: `${fileName}.csv`,
-      header: Object.keys(formattedResults[0]).map((key) => ({ id: key, title: key })),
-      append: true,
-    });
-
     try {
+      const csvWriter = csv({
+        path: `${fileName}.csv`,
+        header: Object.keys(formattedResults[0]).map((key) => ({ id: key, title: key })),
+        append: true,
+      });
       await csvWriter.writeRecords(formattedResults);
       console.log(`${fileName}.csv file updated\n`);
     } catch (err) {
