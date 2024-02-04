@@ -11,31 +11,29 @@ df = pd.read_csv('Data/Query_javascript/repo_168_to_334.csv')
 repo_urls = df['url'].tolist()
 repo_names = df['name'].tolist()
 
-# for testing purpose, only clone one repository
-repo_urls = repo_urls[:1]
-repo_names = repo_names[:1]
+# for testing purpose, only clone two repositories
+repo_urls = repo_urls[:2]
+repo_names = repo_names[:2]
 
 # create a 'Repo' directory if not exists
 if not os.path.exists('Repo'):
     os.makedirs('Repo')
 
+# Directory where you want to clone the repositories
+clone_dir = os.path.expanduser("./Repo")
+
+# Check if the clone directory exists, if not, create it
+os.makedirs(clone_dir, exist_ok=True)
+
+# Change to the clone directory
+os.chdir(clone_dir)
+
 for repo_url, repo_name in zip(repo_urls, repo_names):
-    # Directory where you want to clone the repositories
-    clone_dir = os.path.expanduser("./Repo")
-
-    # Check if the clone directory exists, if not, create it
-    os.makedirs(clone_dir, exist_ok=True)
-
-    # Change to the clone directory
-    os.chdir(clone_dir)
-
-    # Loop through the repository URLs and clone them
-    for repo_url in repo_urls:
-        subprocess.run(["git", "clone", repo_url])
+    # Clone the repository URLs 
+    subprocess.run(["git", "clone", repo_url])
 
     # Print a message when all repositories have been cloned
     print("All specified repositories have been cloned.")
-
 
     # Create a list to store commit data dictionaries
     commits_list = []
