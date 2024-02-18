@@ -1,19 +1,15 @@
 from pydriller import Repository
 import pandas as pd
-
+from tqdm import tqdm
 import subprocess
 import os
 
 # read csv from Data/Query_javascript/repo_168_to_334.csv
-df = pd.read_csv('Data/Query_javascript/repo_168_to_334.csv')
+df = pd.read_csv('Data/Query_javascript/target_2.csv')
 
 # convert the columns of url to a list
 repo_urls = df['url'].tolist()
 repo_names = df['name'].tolist()
-
-# for testing purpose, only clone two repositories
-repo_urls = repo_urls[:2]
-repo_names = repo_names[:2]
 
 # create a 'Repo' directory if not exists
 if not os.path.exists('Repo'):
@@ -28,12 +24,12 @@ os.makedirs(clone_dir, exist_ok=True)
 # Change to the clone directory
 os.chdir(clone_dir)
 
-for repo_url, repo_name in zip(repo_urls, repo_names):
+for repo_url, repo_name in tqdm(zip(repo_urls, repo_names), total=len(repo_urls), desc="Analyzing repositories"):
     # Clone the repository URLs 
-    subprocess.run(["git", "clone", repo_url])
+    subprocess.run(["git", "clone", repo_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # Print a message when all repositories have been cloned
-    print("All specified repositories have been cloned.")
+    tqdm.write(str(repo_name) + " has been cloned")
 
     # Create a list to store commit data dictionaries
     commits_list = []
@@ -56,8 +52,8 @@ for repo_url, repo_name in zip(repo_urls, repo_names):
     # Convert the list of dictionaries to a DataFrame
     commits = pd.DataFrame(commits_list)
 
-    print(commits.head())
-    print(commits.shape)
+    #print(commits.head())
+    #print(commits.shape)
 
     # Dump commits to a CSV file
     commits.to_csv(repo_name + '_commits.csv', index=False)
@@ -80,8 +76,11 @@ for repo_url, repo_name in zip(repo_urls, repo_names):
     # Convert the list of dictionaries to a DataFrame
     modified_files = pd.DataFrame(modified_files)
 
-    print(modified_files.head())
-    print(modified_files.shape)
+    tqdm.write(str(modified_files.head()))
+    tqdm.write(str(modified_files.shape)+ '\n')
 
     # Dump modified files to a CSV file
     modified_files.to_csv(repo_name + '_modified_files.csv', index=False)
+
+    # delete the cloned repository
+    subprocess.run(["rm", "-rf", repo_name])
