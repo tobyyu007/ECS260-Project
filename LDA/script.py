@@ -2623,38 +2623,25 @@ print("test")
 i = 0
 
 
-# import pandas as pd
-# import multiprocessing as mp
-# from tqdm import tqdm
+import pandas as pd
+import multiprocessing as mp
+from tqdm import tqdm
 
-# df = pd.read_csv('target_1.csv')
+df = pd.read_csv('target_1.csv')
 
-# def checkIsApp(row):
-#     isApp = sampling.checkIfApp(row['owner'] + '/' + row['name'])
-#     return row['owner'], row['name'], isApp
+def checkIsApp(row):
+    isApp = sampling.checkIfApp(row['owner'] + '/' + row['name'])
+    return row['owner'], row['name'], isApp
 
-# if __name__ == "__main__":
-#     arguments = [(row,) for index, row in df.iterrows()]
+if __name__ == "__main__":
+    arguments = [(row,) for index, row in df.iterrows()]
 
-#     with mp.Pool(mp.cpu_count()) as pool:
-#         results = pool.starmap(checkIsApp, arguments)
+    with mp.Pool(mp.cpu_count()) as pool:
+        results = pool.starmap(checkIsApp, arguments)
 
-#     # Update DataFrame with results
-#     for owner, name, isApp in results:
-#         df.loc[(df['owner'] == owner) & (df['name'] == name), 'isApp'] = isApp
+    # Update DataFrame with results
+    for owner, name, isApp in results:
+        df.loc[(df['owner'] == owner) & (df['name'] == name), 'isApp'] = isApp
 
-#     # Save the updated DataFrame to CSV once, after all updates
-#     df.to_csv('target_1.csv', index=False)
-
-import pandas as pd 
- 
-df = pd.read_csv('target_1.csv') 
- 
-for index, row in tqdm(df.iterrows(), total=df.shape[0], desc="Analyzing repositories"): 
-    print(row['owner'] + '/' + row['name']) 
-    isApp = sampling.checkIfApp(row['owner'] + '/' + row['name']) 
-    print(isApp) 
-    print() 
-    # write isApp to last column of the row 
-    df.loc[(df['owner'] == row['owner']) & (df['name'] == row['name']), 'isApp'] = isApp 
+    # Save the updated DataFrame to CSV once, after all updates
     df.to_csv('target_1.csv', index=False)
