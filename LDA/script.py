@@ -779,9 +779,9 @@ class Sampling:
         # elif packageJson:
         #     isApp = True
         else:
-            print("No 'app','application','websit' or 'platform'")
+            tqdm.write("No 'app','application','websit' or 'platform'")
             isApp = False
-        print(f"check if app: {isApp}")
+        tqdm.write(f"check if app: {isApp}")
         return isApp
 
     def checkIfPackegeJson(self, repoName):
@@ -883,7 +883,6 @@ class Sampling:
                             readme = requests.get(readmeUrl6, auth=("username", constants.TOKEN))
 
         readmeText = readme.text
-        print(readmeText)
 
         if not description.status_code == 200 and not readme.status_code:
             return None
@@ -895,7 +894,7 @@ class Sampling:
         tokenizer = RegexpTokenizer(r"\w+")
 
         # If already dowloaded comment the following line
-        nltk.download("stopwords")
+        # nltk.download("stopwords")
         en_stop = stopwords.words("english")
 
         p_stemmer = PorterStemmer()
@@ -2625,19 +2624,21 @@ i = 0
 
 import pandas as pd
 import multiprocessing as mp
-from tqdm import tqdm
+from tqdm.contrib.concurrent import process_map
 
 df = pd.read_csv('target_1.csv')
 
 def checkIsApp(row):
+    # Ensure row is treated as a Pandas Series directly
     isApp = sampling.checkIfApp(row['owner'] + '/' + row['name'])
     return row['owner'], row['name'], isApp
 
 if __name__ == "__main__":
-    arguments = [(row,) for index, row in df.iterrows()]
+    # Directly use DataFrame rows as a list of Series objects without wrapping them in tuples
+    arguments = [row for index, row in df.iterrows()]
 
-    with mp.Pool(mp.cpu_count()) as pool:
-        results = pool.starmap(checkIsApp, arguments)
+    # Adjust process_map call to pass each Series object directly to checkIsApp
+    results = process_map(checkIsApp, arguments, max_workers=mp.cpu_count(), chunksize=1)
 
     # Update DataFrame with results
     for owner, name, isApp in results:
