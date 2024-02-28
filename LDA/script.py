@@ -779,9 +779,9 @@ class Sampling:
         # elif packageJson:
         #     isApp = True
         else:
-            print("No 'app','application','websit' or 'platform'")
+            tqdm.write("No 'app','application','websit' or 'platform'")
             isApp = False
-        print(f"check if app: {isApp}")
+        tqdm.write(f"check if app: {isApp}")
         return isApp
 
     def checkIfPackegeJson(self, repoName):
@@ -853,6 +853,15 @@ class Sampling:
         readmeUrl3 = (
             f"https://raw.githubusercontent.com/{repoFullName}/master/Readme.md"
         )
+        readmeUrl4 = (
+            f"https://raw.githubusercontent.com/{repoFullName}/main/Readme.md"
+        )
+        readmeUrl5 = (
+            f"https://raw.githubusercontent.com/{repoFullName}/main/readme.md"
+        )
+        readmeUrl6 = (
+            f"https://raw.githubusercontent.com/{repoFullName}/main/Readme.md"
+        )
         descriptionUrl = f"https://api.github.com/repos/{repoFullName}"
 
         description = requests.get(descriptionUrl, auth=("username", constants.TOKEN))
@@ -866,6 +875,12 @@ class Sampling:
             readme = requests.get(readmeUrl2, auth=("username", constants.TOKEN))
             if readme.status_code == 404:
                 readme = requests.get(readmeUrl3, auth=("username", constants.TOKEN))
+                if readme.status_code == 404:
+                    readme = requests.get(readmeUrl4, auth=("username", constants.TOKEN))
+                    if readme.status_code == 404:
+                        readme = requests.get(readmeUrl5, auth=("username", constants.TOKEN))
+                        if readme.status_code == 404:
+                            readme = requests.get(readmeUrl6, auth=("username", constants.TOKEN))
 
         readmeText = readme.text
 
@@ -879,7 +894,7 @@ class Sampling:
         tokenizer = RegexpTokenizer(r"\w+")
 
         # If already dowloaded comment the following line
-        nltk.download("stopwords")
+        # nltk.download("stopwords")
         en_stop = stopwords.words("english")
 
         p_stemmer = PorterStemmer()
@@ -2608,14 +2623,26 @@ i = 0
 
 
 import pandas as pd
+import multiprocessing as mp
+from tqdm.contrib.concurrent import process_map
 
-df = pd.read_csv('repo_clean.csv')
+df = pd.read_csv('target_1.csv')
 
-for index, row in tqdm(df.iterrows(), total=df.shape[0], desc="Analyzing repositories"):
-    print(row['owner'] + '/' + row['name'])
+def checkIsApp(row):
+    # Ensure row is treated as a Pandas Series directly
     isApp = sampling.checkIfApp(row['owner'] + '/' + row['name'])
-    print(isApp)
-    print()
-    # write isApp to last column of the row
-    df.loc[(df['owner'] == row['owner']) & (df['name'] == row['name']), 'isApp'] = isApp
-    df.to_csv('repo_clean.csv', index=False)
+    return row['owner'], row['name'], isApp
+
+if __name__ == "__main__":
+    # Directly use DataFrame rows as a list of Series objects without wrapping them in tuples
+    arguments = [row for index, row in df.iterrows()]
+
+    # Adjust process_map call to pass each Series object directly to checkIsApp
+    results = process_map(checkIsApp, arguments, max_workers=mp.cpu_count(), chunksize=1)
+
+    # Update DataFrame with results
+    for owner, name, isApp in results:
+        df.loc[(df['owner'] == owner) & (df['name'] == name), 'isApp'] = isApp
+
+    # Save the updated DataFrame to CSV once, after all updates
+    df.to_csv('target_1.csv', index=False)
