@@ -28,6 +28,13 @@ for repo in repo_list:
     repo_owner = repo["owner"]
     print("Processing repo: ", repo_name)
     
+    doc = {
+        "$set":{
+            "has_code_of_conduct": False
+        }
+    }
+    documentation_data_collection.update_one({"url":repo["url"]}, doc)
+    
     # count change time of documentation
     change_count = 0
     commits = Repository("./Repo/"+repo_owner + "_" + repo_name, only_modifications_with_file_types=['.md','.txt']).traverse_commits()
@@ -51,6 +58,14 @@ for repo in repo_list:
                 documentation_count+=1
                 code_line_count += lizard.analyze_file(root + "/"+f).nloc
                 file_size_count += os.path.getsize(root + "/" + f)
+            if f == "CODE_OF_CONDUCT.md" or f == "CODE_OF_CONDUCT.txt":
+                doc = {
+                    "$set":{
+                        "has_code_of_conduct": True
+                    }
+                }
+                documentation_data_collection.update_one({"url":repo["url"]}, doc)
+            
         
     print(repo_name, ": ", documentation_count, " / ", code_line_count, " / ", change_count, " / ", file_size_count)
     
