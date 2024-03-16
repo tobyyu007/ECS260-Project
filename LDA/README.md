@@ -1,6 +1,3 @@
-# Do TypeScript Applications Exhibit Better Software Quality than JavaScript Applications? A Repository Mining Study on GitHub
-> In the following, all the necessary steps are described for the sampling process, the data collection, and the statistical analysis of the study.
-
 ## Prerequisites for `script.py`
 Install all dependencies by executing `pip install -r requirements.txt`.
 
